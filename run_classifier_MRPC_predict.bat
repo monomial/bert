@@ -1,5 +1,5 @@
-set BERT_BASE_DIR=C:\Users\michaels\Projects\bert\uncased_L-12_H-768_A-12
-set GLUE_DIR=C:\Users\michaels\Projects\bert\glue_data
+set BERT_BASE_DIR=models\uncased_L-12_H-768_A-12
+set GLUE_DIR=glue\glue_data
 set TRAINED_CLASSIFIER=tmp\mrpc_output
 set OUTPUT_DIR=tmp\mrpc_output_predict\
 
