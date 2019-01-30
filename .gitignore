@@ -124,3 +124,7 @@ uncased_L-12_H-768_A-12/
 uncased_L-24_H-1024_A-16/
 
 data/all_defendants_data/
+
+data/
+
+models/pretraining_output_all_defs/
