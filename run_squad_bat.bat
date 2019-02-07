@@ -1,5 +1,5 @@
-set BERT_BASE_DIR=C:\Users\michaels\Projects\bert\uncased_L-12_H-768_A-12
-set SQUAD_DIR=C:\Users\michaels\Projects\bert\squad11
+set BERT_BASE_DIR=models\uncased_L-12_H-768_A-12
+set SQUAD_DIR=squad11
 
 python run_squad.py ^
   --vocab_file=%BERT_BASE_DIR%\vocab.txt ^

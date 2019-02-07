@@ -10,7 +10,7 @@ python run_classifier.py ^
   --data_dir=%DATA_DIR% ^
   --vocab_file=%BERT_BASE_DIR%\vocab.txt ^
   --bert_config_file=%BERT_BASE_DIR%\bert_config.json ^
-  --init_checkpoint=%PRETRAINING_DIR%\model.ckpt-1000 ^
+  --init_checkpoint=%PRETRAINING_DIR%\model.ckpt-6000 ^
   --max_seq_length=128 ^
   --train_batch_size=32 ^
   --learning_rate=2e-5 ^
