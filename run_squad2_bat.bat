@@ -17,4 +17,5 @@ python run_squad.py ^
   --doc_stride=128 ^
   --output_dir=%OUTPUT_DIR% ^
   --use_tpu=False ^
-  --version_2_with_negative=True
+  --version_2_with_negative=True ^
+  --save_checkpoints_steps=100

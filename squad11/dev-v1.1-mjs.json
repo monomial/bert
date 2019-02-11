@@ -38,6 +38,14 @@
             {
               "question": "Who was born in Brooklyn?",
               "id": "brookborn"
+            },
+            {
+              "question": "Who did Ariana marry?",
+              "id": "whomarry"
+            },
+            {
+              "question": "Who is Ariana's brother?",
+              "id": "whobrother"
             }
 
           ]
