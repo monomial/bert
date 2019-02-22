@@ -1,5 +1,7 @@
 # for the flask web server serving
 from flask import Flask
+from flask import request
+from flask import jsonify
 
 import collections
 import json
@@ -39,13 +41,14 @@ def validate_flags_or_throw(bert_config):
         "(%d) + 3" % (FLAGS.max_seq_length, FLAGS.max_query_length))
 
 estimator = None
+fullTokenizer = None
 
 def initEstimator():
     tf.logging.set_verbosity(tf.logging.INFO)
     bert_config = modeling.BertConfig.from_json_file(FLAGS.bert_config_file)
     validate_flags_or_throw(bert_config)
     tf.gfile.MakeDirs(FLAGS.output_dir)
-    tokenizer = tokenization.FullTokenizer(
+    fullTokenizer = tokenization.FullTokenizer(
       vocab_file=FLAGS.vocab_file, do_lower_case=True)
 
     is_per_host = tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2
@@ -78,6 +81,8 @@ def initEstimator():
       train_batch_size=FLAGS.train_batch_size,
       predict_batch_size=FLAGS.predict_batch_size)
 
+    return estimator
+
 
 # run the estimator init
 # so that our estimator is set up
@@ -85,33 +90,59 @@ initEstimator()
 
 @app.route("/")
 def hello():
+    initEstimator()
     return "Hello World!"
 
 @app.route("/predict", methods=['POST', 'GET'])
 def runTest():
 
-    post = Post.from_json(request.json)
+    estimator = initEstimator()
 
-    eval_examples = [post]
+    post = request.json
 
-    #eval_writer = FeatureWriter(
-    #    filename=os.path.join(FLAGS.output_dir, "eval.tf_record"),
-    #    is_training=False)
+    #if post != None:
+    #    return jsonify(post)
+
+    paragraph_text = post['text']
+    question_text = post['question']
+    
+    char_to_word_offset = []
+    doc_tokens = run_squad.convert_paragraph_text_to_doc_tokens(paragraph_text, char_to_word_offset)
+
+    example = run_squad.SquadExample(
+        qas_id="999",
+        question_text=question_text,
+        doc_tokens=doc_tokens,
+        orig_answer_text=None,
+        start_position=None,
+        end_position=None,
+        is_impossible=False)
+
+    #return jsonify(str(example))
+
+    eval_examples = [example]
+
+    eval_writer = run_squad.FeatureWriter(
+        filename=os.path.join(FLAGS.output_dir, "eval.tf_record"),
+        is_training=False)
     eval_features = []
 
     def append_feature(feature):
       eval_features.append(feature)
-      #eval_writer.process_feature(feature)
+      eval_writer.process_feature(feature)
 
+    fullTokenizer = tokenization.FullTokenizer(
+      vocab_file=FLAGS.vocab_file, do_lower_case=True)
+    
     run_squad.convert_examples_to_features(
         examples=eval_examples,
-        tokenizer=tokenizer,
+        tokenizer=fullTokenizer,
         max_seq_length=FLAGS.max_seq_length,
         doc_stride=FLAGS.doc_stride,
         max_query_length=FLAGS.max_query_length,
         is_training=False,
         output_fn=append_feature)
-    #eval_writer.close()
+    eval_writer.close()
 
     tf.logging.info("***** Running predictions *****")
     tf.logging.info("  Num orig examples = %d", len(eval_examples))
@@ -120,7 +151,7 @@ def runTest():
 
     all_results = []
 
-    predict_input_fn = input_fn_builder(
+    predict_input_fn = run_squad.input_fn_builder(
         input_file=eval_writer.filename,
         seq_length=FLAGS.max_seq_length,
         is_training=False,
@@ -136,7 +167,7 @@ def runTest():
       start_logits = [float(x) for x in result["start_logits"].flat]
       end_logits = [float(x) for x in result["end_logits"].flat]
       all_results.append(
-          RawResult(
+          run_squad.RawResult(
               unique_id=unique_id,
               start_logits=start_logits,
               end_logits=end_logits))
@@ -145,12 +176,12 @@ def runTest():
     output_nbest_file = os.path.join(FLAGS.output_dir, "nbest_predictions.json")
     output_null_log_odds_file = os.path.join(FLAGS.output_dir, "null_odds.json")
 
-    write_predictions(eval_examples, eval_features, all_results,
+    run_squad.write_predictions(eval_examples, eval_features, all_results,
                       FLAGS.n_best_size, FLAGS.max_answer_length,
                       FLAGS.do_lower_case, output_prediction_file,
                       output_nbest_file, output_null_log_odds_file)
 
-    return all_results
+    return jsonify(all_results)
 
 
 if __name__ == "__main__":
