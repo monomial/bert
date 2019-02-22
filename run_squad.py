@@ -933,6 +933,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
   if FLAGS.version_2_with_negative:
     with tf.gfile.GFile(output_null_log_odds_file, "w") as writer:
       writer.write(json.dumps(scores_diff_json, indent=4) + "\n")
+  
+  return all_nbest_json
 
 
 def get_final_text(pred_text, orig_text, do_lower_case):

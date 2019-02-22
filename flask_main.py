@@ -176,12 +176,12 @@ def runTest():
     output_nbest_file = os.path.join(FLAGS.output_dir, "nbest_predictions.json")
     output_null_log_odds_file = os.path.join(FLAGS.output_dir, "null_odds.json")
 
-    run_squad.write_predictions(eval_examples, eval_features, all_results,
+    nbestOutput = run_squad.write_predictions(eval_examples, eval_features, all_results,
                       FLAGS.n_best_size, FLAGS.max_answer_length,
                       FLAGS.do_lower_case, output_prediction_file,
                       output_nbest_file, output_null_log_odds_file)
 
-    return jsonify(all_results)
+    return jsonify(nbestOutput)
 
 
 if __name__ == "__main__":
