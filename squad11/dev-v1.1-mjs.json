@@ -51,6 +51,24 @@
           ]
         }
       ]
+    },
+    {
+      "title": "File Notes Number 1",
+      "paragraphs": [
+        {
+          "context": "Request to increase Expense reserves by an additional $3K to cover additional legal fees submitted @ year's end by Foobar's offices for continued legal advice/editing/review & preparation of Dr. Foobar's reply letter to the MB re: requests for patient records (which Pt.s do not want released). ~SAS",
+          "qas": [
+            {
+              "question": "How much is the increase in reserves?",
+              "id": "reserveinc"
+            },
+            {
+              "question":"What is the name of the dr?",
+              "id": "999"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

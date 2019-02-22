@@ -230,33 +230,38 @@ class InputFeatures(object):
     self.is_impossible = is_impossible
 
 
+def doc_tokens_is_whitespace(c):
+  if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
+    return True
+  return False
+
+def convert_paragraph_text_to_doc_tokens(paragraph_text, char_to_word_offset):
+  doc_tokens = []
+  prev_is_whitespace = True
+  for c in paragraph_text:
+    if doc_tokens_is_whitespace(c):
+      prev_is_whitespace = True
+    else:
+      if prev_is_whitespace:
+        doc_tokens.append(c)
+      else:
+        doc_tokens[-1] += c
+      prev_is_whitespace = False
+    char_to_word_offset.append(len(doc_tokens) - 1)
+
+  return doc_tokens
+
 def read_squad_examples(input_file, is_training):
   """Read a SQuAD json file into a list of SquadExample."""
   with tf.gfile.Open(input_file, "r") as reader:
     input_data = json.load(reader)["data"]
 
-  def is_whitespace(c):
-    if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
-      return True
-    return False
-
   examples = []
   for entry in input_data:
     for paragraph in entry["paragraphs"]:
       paragraph_text = paragraph["context"]
-      doc_tokens = []
       char_to_word_offset = []
-      prev_is_whitespace = True
-      for c in paragraph_text:
-        if is_whitespace(c):
-          prev_is_whitespace = True
-        else:
-          if prev_is_whitespace:
-            doc_tokens.append(c)
-          else:
-            doc_tokens[-1] += c
-          prev_is_whitespace = False
-        char_to_word_offset.append(len(doc_tokens) - 1)
+      doc_tokens = convert_paragraph_text_to_doc_tokens(paragraph_text, char_to_word_offset)
 
       for qa in paragraph["qas"]:
         qas_id = qa["id"]

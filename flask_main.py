@@ -20,80 +20,6 @@ flags = tf.flags
 
 FLAGS = flags.FLAGS
 
-## Required parameters
-flags.DEFINE_string(
-    "bert_config_file", None,
-    "The config json file corresponding to the pre-trained BERT model. "
-    "This specifies the model architecture.")
-
-flags.DEFINE_string("vocab_file", None,
-                    "The vocabulary file that the BERT model was trained on.")
-
-flags.DEFINE_string(
-    "output_dir", None,
-    "The output directory where the model checkpoints will be written.")
-
-## Other parameters
-
-flags.DEFINE_string(
-    "init_checkpoint", None,
-    "Initial checkpoint (usually from a pre-trained BERT model).")
-
-flags.DEFINE_bool(
-    "do_lower_case", True,
-    "Whether to lower case the input text. Should be True for uncased "
-    "models and False for cased models.")
-
-flags.DEFINE_integer(
-    "max_seq_length", 384,
-    "The maximum total input sequence length after WordPiece tokenization. "
-    "Sequences longer than this will be truncated, and sequences shorter "
-    "than this will be padded.")
-
-flags.DEFINE_integer(
-    "doc_stride", 128,
-    "When splitting up a long document into chunks, how much stride to "
-    "take between chunks.")
-
-flags.DEFINE_integer(
-    "max_query_length", 64,
-    "The maximum number of tokens for the question. Questions longer than "
-    "this will be truncated to this length.")
-
-flags.DEFINE_integer("predict_batch_size", 8,
-                     "Total batch size for predictions.")
-
-flags.DEFINE_integer("save_checkpoints_steps", 1000,
-                     "How often to save the model checkpoint.")
-
-flags.DEFINE_integer("iterations_per_loop", 1000,
-                     "How many steps to make in each estimator call.")
-
-flags.DEFINE_integer(
-    "n_best_size", 10, # default was 20. 10 seems like it's enough. can be overwritten.
-    "The total number of n-best predictions to generate in the "
-    "nbest_predictions.json output file.")
-
-flags.DEFINE_integer(
-    "max_answer_length", 30,
-    "The maximum length of an answer that can be generated. This is needed "
-    "because the start and end predictions are not conditioned on one another.")
-
-tf.flags.DEFINE_string("master", None, "[Optional] TensorFlow master URL.")
-
-flags.DEFINE_bool(
-    "verbose_logging", False,
-    "If true, all of the warnings related to data processing will be printed. "
-    "A number of warnings are expected for a normal SQuAD evaluation.")
-
-flags.DEFINE_bool(
-    "version_2_with_negative", True,
-    "If true, the SQuAD examples contain some that do not have an answer.")
-
-flags.DEFINE_float(
-    "null_score_diff_threshold", 0.0,
-    "If null_score - best_non_null is greater than the threshold predict null.")
-
 app = Flask(__name__)
 
 def validate_flags_or_throw(bert_config):
@@ -134,13 +60,13 @@ def initEstimator():
           num_shards=FLAGS.num_tpu_cores,
           per_host_input_for_training=is_per_host))
     
-    model_fn = model_fn_builder(
+    model_fn = run_squad.model_fn_builder(
       bert_config=bert_config,
       init_checkpoint=FLAGS.init_checkpoint,
       learning_rate=FLAGS.learning_rate,
-      num_train_steps=num_train_steps,
-      num_warmup_steps=num_warmup_steps,
-      use_tpu=FLAGS.use_tpu,
+      num_train_steps=None,
+      num_warmup_steps=None,
+      use_tpu=False,
       use_one_hot_embeddings=FLAGS.use_tpu)
 
     # If TPU is not available, this will fall back to normal Estimator on CPU
@@ -153,7 +79,7 @@ def initEstimator():
       predict_batch_size=FLAGS.predict_batch_size)
 
 
-# run the init
+# run the estimator init
 # so that our estimator is set up
 initEstimator()
 
@@ -161,12 +87,71 @@ initEstimator()
 def hello():
     return "Hello World!"
 
-@app.route("/test")
+@app.route("/predict", methods=['POST', 'GET'])
 def runTest():
-    # Convert examples into features
 
-    #
+    post = Post.from_json(request.json)
+
+    eval_examples = [post]
+
+    #eval_writer = FeatureWriter(
+    #    filename=os.path.join(FLAGS.output_dir, "eval.tf_record"),
+    #    is_training=False)
+    eval_features = []
+
+    def append_feature(feature):
+      eval_features.append(feature)
+      #eval_writer.process_feature(feature)
+
+    run_squad.convert_examples_to_features(
+        examples=eval_examples,
+        tokenizer=tokenizer,
+        max_seq_length=FLAGS.max_seq_length,
+        doc_stride=FLAGS.doc_stride,
+        max_query_length=FLAGS.max_query_length,
+        is_training=False,
+        output_fn=append_feature)
+    #eval_writer.close()
+
+    tf.logging.info("***** Running predictions *****")
+    tf.logging.info("  Num orig examples = %d", len(eval_examples))
+    tf.logging.info("  Num split examples = %d", len(eval_features))
+    tf.logging.info("  Batch size = %d", FLAGS.predict_batch_size)
+
+    all_results = []
+
+    predict_input_fn = input_fn_builder(
+        input_file=eval_writer.filename,
+        seq_length=FLAGS.max_seq_length,
+        is_training=False,
+        drop_remainder=False)
+
+    # If running eval on the TPU, you will need to specify the number of
+    # steps.
+    all_results = []
+    for result in estimator.predict(predict_input_fn, yield_single_examples=True):
+      if len(all_results) % 1000 == 0:
+        tf.logging.info("Processing example: %d" % (len(all_results)))
+      unique_id = int(result["unique_ids"])
+      start_logits = [float(x) for x in result["start_logits"].flat]
+      end_logits = [float(x) for x in result["end_logits"].flat]
+      all_results.append(
+          RawResult(
+              unique_id=unique_id,
+              start_logits=start_logits,
+              end_logits=end_logits))
+
+    output_prediction_file = os.path.join(FLAGS.output_dir, "predictions.json")
+    output_nbest_file = os.path.join(FLAGS.output_dir, "nbest_predictions.json")
+    output_null_log_odds_file = os.path.join(FLAGS.output_dir, "null_odds.json")
+
+    write_predictions(eval_examples, eval_features, all_results,
+                      FLAGS.n_best_size, FLAGS.max_answer_length,
+                      FLAGS.do_lower_case, output_prediction_file,
+                      output_nbest_file, output_null_log_odds_file)
+
+    return all_results
 
 
 if __name__ == "__main__":
-    app.run()
+    app.run(debug=True)
