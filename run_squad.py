@@ -83,6 +83,12 @@ flags.DEFINE_bool("do_train", False, "Whether to run training.")
 
 flags.DEFINE_bool("do_predict", False, "Whether to run eval on the dev set.")
 
+flags.DEFINE_bool("do_export", False, "Whether to export the model for serving.")
+
+flags.DEFINE_string(
+    "export_dir", None,
+    "The directory where the exported model will be written.")
+
 flags.DEFINE_integer("train_batch_size", 32, "Total batch size for training.")
 
 flags.DEFINE_integer("predict_batch_size", 8,
@@ -228,33 +234,38 @@ class InputFeatures(object):
     self.is_impossible = is_impossible
 
 
+def doc_tokens_is_whitespace(c):
+  if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
+    return True
+  return False
+
+def convert_paragraph_text_to_doc_tokens(paragraph_text, char_to_word_offset):
+  doc_tokens = []
+  prev_is_whitespace = True
+  for c in paragraph_text:
+    if doc_tokens_is_whitespace(c):
+      prev_is_whitespace = True
+    else:
+      if prev_is_whitespace:
+        doc_tokens.append(c)
+      else:
+        doc_tokens[-1] += c
+      prev_is_whitespace = False
+    char_to_word_offset.append(len(doc_tokens) - 1)
+
+  return doc_tokens
+
 def read_squad_examples(input_file, is_training):
   """Read a SQuAD json file into a list of SquadExample."""
   with tf.gfile.Open(input_file, "r") as reader:
     input_data = json.load(reader)["data"]
 
-  def is_whitespace(c):
-    if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
-      return True
-    return False
-
   examples = []
   for entry in input_data:
     for paragraph in entry["paragraphs"]:
       paragraph_text = paragraph["context"]
-      doc_tokens = []
       char_to_word_offset = []
-      prev_is_whitespace = True
-      for c in paragraph_text:
-        if is_whitespace(c):
-          prev_is_whitespace = True
-        else:
-          if prev_is_whitespace:
-            doc_tokens.append(c)
-          else:
-            doc_tokens[-1] += c
-          prev_is_whitespace = False
-        char_to_word_offset.append(len(doc_tokens) - 1)
+      doc_tokens = convert_paragraph_text_to_doc_tokens(paragraph_text, char_to_word_offset)
 
       for qa in paragraph["qas"]:
         qas_id = qa["id"]
@@ -926,6 +937,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
   if FLAGS.version_2_with_negative:
     with tf.gfile.GFile(output_null_log_odds_file, "w") as writer:
       writer.write(json.dumps(scores_diff_json, indent=4) + "\n")
+  
+  return all_nbest_json
 
 
 def get_final_text(pred_text, orig_text, do_lower_case):
@@ -1103,8 +1116,8 @@ def validate_flags_or_throw(bert_config):
   tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case,
                                                 FLAGS.init_checkpoint)
 
-  if not FLAGS.do_train and not FLAGS.do_predict:
-    raise ValueError("At least one of `do_train` or `do_predict` must be True.")
+  if not FLAGS.do_train and not FLAGS.do_predict and not FLAGS.do_export:
+    raise ValueError("At least one of `do_train` or `do_predict` or `do_export` must be True.")
 
   if FLAGS.do_train:
     if not FLAGS.train_file:
@@ -1257,8 +1270,7 @@ def main(_):
     # If running eval on the TPU, you will need to specify the number of
     # steps.
     all_results = []
-    for result in estimator.predict(
-        predict_input_fn, yield_single_examples=True):
+    for result in estimator.predict(predict_input_fn, yield_single_examples=True):
       if len(all_results) % 1000 == 0:
         tf.logging.info("Processing example: %d" % (len(all_results)))
       unique_id = int(result["unique_ids"])
@@ -1278,6 +1290,25 @@ def main(_):
                       FLAGS.n_best_size, FLAGS.max_answer_length,
                       FLAGS.do_lower_case, output_prediction_file,
                       output_nbest_file, output_null_log_odds_file)
+
+  if FLAGS.do_export:
+    def serving_input_fn():
+      with tf.variable_scope("foo"):
+        feature_spec = {
+          "unique_ids": tf.FixedLenFeature([], tf.int64),
+          "input_ids": tf.FixedLenFeature([FLAGS.max_seq_length], tf.int64),
+          "input_mask": tf.FixedLenFeature([FLAGS.max_seq_length], tf.int64),
+          "segment_ids": tf.FixedLenFeature([FLAGS.max_seq_length], tf.int64),
+        }
+        serialized_tf_example = tf.placeholder(dtype=tf.string,
+                                              shape=[None],
+                                              name='input_example_tensor')
+        receiver_tensors = {'examples': serialized_tf_example}
+        features = tf.parse_example(serialized_tf_example, feature_spec)
+        return tf.estimator.export.ServingInputReceiver(features, receiver_tensors)
+
+    estimator._export_to_tpu = False # important
+    estimator.export_savedmodel(FLAGS.export_dir, serving_input_fn)
 
 
 if __name__ == "__main__":
