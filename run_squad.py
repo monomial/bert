@@ -135,6 +135,10 @@ tf.flags.DEFINE_string(
     "metadata.")
 
 tf.flags.DEFINE_string(
+  "predictions_files_suffix", "",
+  "output file name suffix for the predictions result files")
+
+tf.flags.DEFINE_string(
     "gcp_project", None,
     "[Optional] Project name for the Cloud TPU-enabled project. If not "
     "specified, we will attempt to automatically detect the GCE project from "
@@ -1278,9 +1282,9 @@ def main(_):
               start_logits=start_logits,
               end_logits=end_logits))
 
-    output_prediction_file = os.path.join(FLAGS.output_dir, "predictions.json")
-    output_nbest_file = os.path.join(FLAGS.output_dir, "nbest_predictions.json")
-    output_null_log_odds_file = os.path.join(FLAGS.output_dir, "null_odds.json")
+    output_prediction_file = os.path.join(FLAGS.output_dir, "predictions" + FLAGS.predictions_files_suffix + ".json")
+    output_nbest_file = os.path.join(FLAGS.output_dir, "nbest_predictions" + FLAGS.predictions_files_suffix + ".json")
+    output_null_log_odds_file = os.path.join(FLAGS.output_dir, "null_odds" + FLAGS.predictions_files_suffix + ".json")
 
     write_predictions(eval_examples, eval_features, all_results,
                       FLAGS.n_best_size, FLAGS.max_answer_length,
