@@ -3,6 +3,8 @@ from flask import Flask
 from flask import request
 from flask import jsonify
 
+from pathlib import Path
+
 import collections
 import json
 import math
@@ -15,12 +17,17 @@ import tokenization
 
 import tensorflow as tf
 
+# testing out the use of predictor
+from tensorflow.contrib import predictor
+
 # for the SQuAD 2.0 code
 import run_squad
 
 flags = tf.flags
 
 FLAGS = flags.FLAGS
+
+flags.DEFINE_bool("use_predictor", False, "Whether to use a saved model for prediction.")
 
 app = Flask(__name__)
 
@@ -160,17 +167,47 @@ def runTest():
     # If running eval on the TPU, you will need to specify the number of
     # steps.
     all_results = []
-    for result in estimator.predict(predict_input_fn, yield_single_examples=True):
-      if len(all_results) % 1000 == 0:
-        tf.logging.info("Processing example: %d" % (len(all_results)))
-      unique_id = int(result["unique_ids"])
-      start_logits = [float(x) for x in result["start_logits"].flat]
-      end_logits = [float(x) for x in result["end_logits"].flat]
-      all_results.append(
-          run_squad.RawResult(
-              unique_id=unique_id,
-              start_logits=start_logits,
-              end_logits=end_logits))
+
+    if not FLAGS.use_predictor:
+        for result in estimator.predict(predict_input_fn, yield_single_examples=True):
+            if len(all_results) % 1000 == 0:
+                tf.logging.info("Processing example: %d" % (len(all_results)))
+            unique_id = int(result["unique_ids"])
+            start_logits = [float(x) for x in result["start_logits"].flat]
+            end_logits = [float(x) for x in result["end_logits"].flat]
+            all_results.append(
+                run_squad.RawResult(
+                    unique_id=unique_id,
+                    start_logits=start_logits,
+                    end_logits=end_logits))
+
+    if FLAGS.use_predictor:
+        export_dir = 'tmp/squad2_base_laptop_export' # todo: make this a FLAG parameter setting
+        subdirs = [x for x in Path(export_dir).iterdir()
+                if x.is_dir() and 'temp' not in str(x)]
+        latest = str(sorted(subdirs)[-1])
+        predict_fn = predictor.from_saved_model(latest)
+        for feat in eval_features:
+
+            tf.logging.info("feat: " + str(feat))
+
+            exs = '[{ "unique_ids": [%d], "input_ids": %s, "input_mask": %s, "segment_ids": %s }]' % (feat.unique_id, feat.input_ids, feat.input_mask, feat.segment_ids)
+            
+            tf.logging.info("exs: " + exs)
+
+            result = predict_fn({
+                "examples": exs
+            })
+
+            unique_id = int(result["unique_ids"])
+            start_logits = [float(x) for x in result["start_logits"].flat]
+            end_logits = [float(x) for x in result["end_logits"].flat]
+            all_results.append(
+                run_squad.RawResult(
+                    unique_id=unique_id,
+                    start_logits=start_logits,
+                    end_logits=end_logits))
+
 
     output_prediction_file = os.path.join(FLAGS.output_dir, "predictions.json")
     output_nbest_file = os.path.join(FLAGS.output_dir, "nbest_predictions.json")

@@ -1,6 +1,6 @@
 set BERT_BASE_DIR=models\uncased_L-12_H-768_A-12
 set SQUAD_DIR=squad11
-set SQUAD_OUTPUT_DIR=tmp\squad2_base_laptop
+set SQUAD_OUTPUT_DIR=tmp\squad2_base
 set SQUAD_EXPORT_DIR=tmp\squad2_base_laptop_export
 
 python run_squad.py ^
